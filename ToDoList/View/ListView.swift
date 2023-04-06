@@ -9,6 +9,10 @@ import SwiftUI
 
 struct ListView: View {
     
+    @Environment(\.blackbirdDatabase) var db:
+    Blackbird.Database?
+    
+    
     @BlackbirdLiveModels({ db in
         try await TodoItem.read(from: db)
         
@@ -16,7 +20,7 @@ struct ListView: View {
     
     @State var newItemDescription: String = ""
     
-    
+    // MARK: Computed Propreties
     var body: some View {
         
         NavigationView{
@@ -40,6 +44,10 @@ struct ListView: View {
 //                        todoItems.append (newTodoItem)
 //
 //                        newItemDescription = ""
+                        Task{
+                            try await db!.transaction{ core in
+                                try core.query("INSERT INTO TodoItem (description) VALUES (?)", newItemDescription)
+                            }}
                     },  label: {
                         Text("ADD")
                             .font(.caption)
@@ -47,20 +55,48 @@ struct ListView: View {
                     
                 }
                 .padding()
-                
-                List(todoItems.results){ currentItem in
-                    Label(title: {
-                        Text (currentItem.description)
-                    }, icon: {
-                        if currentItem.completed == true {
-                            Image (systemName: "checkmark.circle")
-                        } else {
-                            Image(systemName: "circle")
+                List{
+                    ForEach(todoItems.results){ currentItem in
+                        Label(title: {
+                            Text (currentItem.description)
+                        }, icon: {
+                            if currentItem.completed == true {
+                                Image (systemName: "checkmark.circle")
+                            } else {
+                                Image(systemName: "circle")
                             }
-                    })}
-                
+                        })
+                        .onTapGesture {
+                            Task{
+                                try await db!.transaction{ core in
+                                    try core.query("UPDATE TodoItem SET completed = (?) WHERE ID = (?)",
+                                                   !currentItem.completed,currentItem.id)
+                                }
+                            }
+                        }
+                    }
+                    .onDelete(perform: removeRows)
+                }
             }
             .navigationTitle("To Do List")
+        }
+    }
+    
+    // MARK: Functions
+    func removeRows(at offsets: IndexSet){
+        
+        Task{
+            try await db!.transaction{ core in
+                var idlist = ""
+                for offset in offsets{
+                    idlist += "\(todoItems.results[offset].id),"
+                }
+                print(idlist)
+                idlist.removeLast()
+                print(idlist)
+                
+                try core.query("DELETE FROM TodoItem Where id IN (?)",idlist)
+            }
         }
     }
 }
